@@ -41,5 +41,10 @@ def callback_query(call):
     elif call.data == 'pizza_no':
         bot.answer_callback_query(call.id, '¡Bueno cada uno tiene sus gustos!')
 
+@bot.message_handler(commands=['foto'])
+def send_image(message):
+    img_url = 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/1200px-Python-logo-notext.svg.png'
+    bot.send_photo(chat_id=message.chat.id, photo=img_url, caption='Aqui tienes tu imagen')
+
 if __name__ == '__main__':
     bot.polling(none_stop=True)
