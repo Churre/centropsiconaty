@@ -1,11 +1,41 @@
+import os
 import telebot
 from telebot import types
+from dotenv import load_dotenv
+import requests
+
+load_dotenv()  # Carga las variables del archivo .env
 
 #Conexion con nuestro BOT
-TOKEN = '7328298835:AAHar7LmiLhNCDMaF-DEUxSI_0Jjb0CG990'
+#TOKEN = '7328298835:AAHar7LmiLhNCDMaF-DEUxSI_0Jjb0CG990'
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN_CENTROPSICONATY")  # Lee el token desde .env
+#API_KEY = '5cf313f74d4cfb04d21b69ff0e762acd'
+API_KEY = os.getenv("API_KEY_WEATHER")  # Lee el token desde .env
 bot = telebot.TeleBot(TOKEN)
+BASE_URL = 'https://api.openweathermap.org/data/2.5/weather?'
 
+def get_weather(city_name):
+    complete_url = BASE_URL + "q=" + city_name + "&appid=" + API_KEY
+    response = requests.get(complete_url)
+    data = response.json()
+    print(data)
+    if data["cod"] != 404:
+        main_data = data["main"]
+        weather_data = data["weather"][0]
+        temperature = main_data["temp"] - 273.15
+        description = weather_data["description"]
+        return f"Temperatura: {temperature:.2f}°C\n{description.capitalize()}"
+    else:
+        return 'Ciudad no encontrada'
 
+@bot.message_handler(commands=['clima'])
+def send_weather(message):
+    city_name = message.text.split()[1] if len(message.text.split()) > 1 else None
+    if city_name:
+        weather_info = get_weather(city_name)
+        bot.reply_to(message, weather_info)
+    else:
+        bot.reply_to(message, "Por favor, proporciona el nombre de la ciudad. Ejemplo: /clima Madrid")
 
 #Creacion de comandos simples como `/start` y `/help`
 @bot.message_handler(commands=['start'])
