@@ -3,16 +3,33 @@ import telebot
 from telebot import types
 from dotenv import load_dotenv
 import requests
+import sqlite3
 
 load_dotenv()  # Carga las variables del archivo .env
 
 #Conexion con nuestro BOT
-#TOKEN = '7328298835:AAHar7LmiLhNCDMaF-DEUxSI_0Jjb0CG990'
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN_CENTROPSICONATY")  # Lee el token desde .env
-#API_KEY = '5cf313f74d4cfb04d21b69ff0e762acd'
 API_KEY = os.getenv("API_KEY_WEATHER")  # Lee el token desde .env
 bot = telebot.TeleBot(TOKEN)
 BASE_URL = 'https://api.openweathermap.org/data/2.5/weather?'
+
+def insert_user(telegram_id: int, name: str):
+    conn = sqlite3.connect('telegram_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR IGNORE INTO users (telegram_id, name)
+        VALUES (?, ?)
+    ''', (telegram_id, name))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+@bot.message_handler(commands=['save'])
+def save_user(message):
+    telegram_id = message.from_user.id
+    name = message.from_user.first_name
+    insert_user(telegram_id, name)
+    bot.reply_to(message, f'Bienvenido {name}, tu informacion ha sido guardada.')
 
 def get_weather(city_name):
     complete_url = BASE_URL + "q=" + city_name + "&appid=" + API_KEY
