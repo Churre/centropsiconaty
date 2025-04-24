@@ -5,9 +5,17 @@ from dotenv import load_dotenv
 import requests
 import sqlite3
 import logging
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+import datetime
 
 # Cargar variables de entorno
 load_dotenv()
+
+# Scopes necesarios para acceder a Google Calendar
+SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 # Configuración del bot y API
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN_CENTROPSICONATY")  # Lee el token desde .env
@@ -117,5 +125,70 @@ def send_image(message):
     img_url = 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/1200px-Python-logo-notext.svg.png'
     bot.send_photo(chat_id=message.chat.id, photo=img_url, caption='Aqui tienes tu imagen')
 
+################################
+@bot.message_handler(commands=['reunion'])
+def schedule_meeting(message):
+    """Programa una reunión en Google Calendar."""
+    try:
+        summary = "Reunión con el equipo"
+        description = "Revisión semanal del proyecto."
+        start_time = "2025-04-25T10:00:00-07:00"
+        end_time = "2025-04-25T11:00:00-07:00"
+        attendees = ["therock21@gmail.com", "therock21@hotmail.com"]
+
+        event = create_event(summary, description, start_time, end_time, attendees)
+        bot.reply_to(message, f"Reunión creada: {event.get('htmlLink')}")
+    except Exception as e:
+        bot.reply_to(message, f"Error al programar la reunión: {e}")
+
+def authenticate_google():
+    """Autentica al usuario con Google y devuelve un servicio de la API de Calendar."""
+    creds = None
+    # Archivo token.json para almacenar las credenciales del usuario
+    if os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    # Si no hay credenciales válidas, solicita al usuario que inicie sesión
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            creds = flow.run_local_server(port=8080)
+        # Guarda las credenciales para futuras ejecuciones
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+    return build('calendar', 'v3', credentials=creds)
+
+def create_event(summary, description, start_time, end_time, attendees=None):
+    """Crea un evento en Google Calendar."""
+    try:
+        service = authenticate_google()
+        event = {
+            'summary': summary,
+            'description': description,
+            'start': {
+                'dateTime': start_time,
+                'timeZone': 'America/Lima',  # Cambia a tu zona horaria
+            },
+            'end': {
+                'dateTime': end_time,
+                'timeZone': 'America/Lima',
+            },
+            'attendees': [{'email': email} for email in attendees] if attendees else [],
+        }
+        event_result = service.events().insert(calendarId='primary', body=event).execute()
+        print(f"Evento creado: {event_result.get('htmlLink')}")
+        return event_result
+    except Exception as e:
+        print(f"Error al crear el evento: {e}")
+
 if __name__ == '__main__':
     bot.polling(none_stop=True)
+    
+    #REGISTRAR REUNION
+    #summary = "Reunión de Proyecto"
+    #description = "Discusión sobre el progreso del proyecto."
+    #start_time = "2025-04-25T10:00:00-07:00"  # Formato ISO 8601
+    #end_time = "2025-04-25T11:00:00-07:00"
+    #attendees = ["correo1@example.com", "correo2@example.com"]
+    #create_event(summary, description, start_time, end_time, attendees)
