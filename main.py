@@ -1,15 +1,16 @@
 import os
 import telebot
-from telebot import types
-from dotenv import load_dotenv
 import requests
 import sqlite3
 import logging
+from telebot import types
+from dotenv import load_dotenv
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-import datetime
+from datetime import datetime, timedelta
 
 # Cargar variables de entorno
 load_dotenv()
@@ -26,6 +27,213 @@ BASE_URL = 'https://api.openweathermap.org/data/2.5/weather?'
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+#Creacion de comandos simples como `/start` y `/help`
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    """Teclado personalizado para iniciar el bot."""
+    # Crear el teclado
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    btn_agendar = KeyboardButton('📅 Agendar cita')
+    btn_servicios = KeyboardButton('ℹ️ Servicios')
+    btn_contactar = KeyboardButton('💬 Contactar por WhatsApp')
+    btn_sobre_nataly = KeyboardButton('👩‍⚕️ Sobre Nataly')
+    btn_testimonios = KeyboardButton('📝 Testimonios')
+
+    # Agregar los botones al teclado
+    markup.add(btn_agendar, btn_servicios, btn_contactar, btn_sobre_nataly, btn_testimonios)
+
+    # Enviar el mensaje con el teclado
+    bot.send_message(
+        message.chat.id,
+        "¡Hola! Bienvenido al bot del Consultorio Psicologico CentroPsicoNaty de Nataly Atuncar. Por favor selecciona una opción:",
+        reply_markup=markup
+    )
+
+#INICIO - AGENDAR CITA
+@bot.message_handler(func=lambda message: message.text == '📅 Agendar cita')
+def handle_agendar_cita(message):
+    """Solicitar al usuario el día y la hora para agendar una cita."""
+    bot.reply_to(message, "¡Claro! Por favor, indícame el día y la hora en el formato 'AAAA-MM-DD HH:MM' (por ejemplo, 2025-04-25 10:00).")
+    bot.register_next_step_handler(message, process_datetime)
+
+def process_datetime(message):
+    """Procesa el día y la hora proporcionados por el usuario."""
+    try:
+        # Convertir la entrada del usuario a un objeto datetime
+        user_input = message.text.strip()
+        start_time = datetime.strptime(user_input, "%Y-%m-%d %H:%M")
+        end_time = start_time + timedelta(hours=1)  # Duración de 1 hora
+
+        # Convertir a formato ISO 8601
+        start_time_iso = start_time.isoformat()
+        end_time_iso = end_time.isoformat()
+
+        # Solicitar el correo de los asistentes
+        bot.reply_to(message, "Por favor, proporciona los correos electrónicos de los asistentes separados por comas y sin espacios.")
+        bot.register_next_step_handler(message, process_attendees, start_time_iso, end_time_iso)
+    except ValueError:
+        bot.reply_to(message, "El formato de fecha y hora no es válido. Por favor, usa el formato 'AAAA-MM-DD HH:MM'.")
+
+def process_attendees(message, start_time_iso, end_time_iso):
+    """Procesa los correos electrónicos de los asistentes y crea el evento."""
+    try:
+        # Obtener los correos electrónicos de los asistentes
+        attendees = [email.strip() for email in message.text.split(",")]
+
+        # Crear el evento en Google Calendar
+        summary = "Cita con Nataly"
+        description = "Cita agendada a través del bot de CentroPsicoNaty."
+        event = create_event(summary, description, start_time_iso, end_time_iso, attendees)
+
+        # Confirmar al usuario
+        bot.reply_to(message, f"¡Cita creada con éxito! Aquí está el enlace: {event.get('htmlLink')}")
+        
+        # Mostrar nuevamente el teclado con las opciones
+        markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        btn_agendar = KeyboardButton('📅 Agendar cita')
+        btn_servicios = KeyboardButton('ℹ️ Servicios')
+        btn_contactar = KeyboardButton('💬 Contactar por WhatsApp')
+        btn_sobre_nataly = KeyboardButton('👩‍⚕️ Sobre Nataly')
+        btn_testimonios = KeyboardButton('📝 Testimonios')
+
+        # Agregar los botones al teclado
+        markup.add(btn_agendar, btn_servicios, btn_contactar, btn_sobre_nataly, btn_testimonios)
+
+        # Enviar el teclado al usuario
+        bot.send_message(
+            message.chat.id,
+            "¿En qué más puedo ayudarte?",
+            reply_markup=markup
+        )
+
+    except Exception as e:
+        bot.reply_to(message, f"Hubo un error al crear la cita: {e}")
+#FIN - AGENDAR CITA
+
+#INICIO - SERVICIOS
+@bot.message_handler(func=lambda message: message.text == 'ℹ️ Servicios')
+def handle_servicios(message):
+    """Muestra las opciones de servicios."""
+    # Crear el teclado con las opciones de servicios
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+    btn_terapias = KeyboardButton('Lista de terapias')
+    btn_video = KeyboardButton('Video explicativo')
+    btn_precios = KeyboardButton('Precios y promociones')
+    btn_volver = KeyboardButton('⬅️ Volver al inicio')  # Botón para volver al inicio
+    markup.add(btn_terapias, btn_video, btn_precios, btn_volver)
+
+    # Enviar el mensaje con el teclado
+    bot.send_message(
+        message.chat.id,
+        "Selecciona una opción para obtener más información sobre nuestros servicios:",
+        reply_markup=markup
+    )
+
+@bot.message_handler(func=lambda message: message.text == 'Lista de terapias')
+def handle_lista_terapias(message):
+    """Muestra la lista de terapias disponibles."""
+    bot.send_message(
+        message.chat.id,
+        "Ofrecemos las siguientes terapias:\n"
+        "- Humanista\n"
+        "- Cognitivo-Conductual\n"
+        "- Parejas"
+    )
+    mostrar_teclado_inicio(message)
+
+@bot.message_handler(func=lambda message: message.text == 'Video explicativo')
+def handle_video_explicativo(message):
+    """Muestra un video explicativo sobre cómo funciona una sesión."""
+    bot.send_message(
+        message.chat.id,
+        "¿Cómo funciona una sesión? Mira este video explicativo: https://www.youtube.com/watch?v=ehRgWj5Yt7U"
+    )
+    mostrar_teclado_inicio(message)
+
+@bot.message_handler(func=lambda message: message.text == 'Precios y promociones')
+def handle_precios_promociones(message):
+    """Muestra los precios y promociones disponibles."""
+    bot.send_message(
+        message.chat.id,
+        "Nuestros precios y promociones:\n"
+        "- Precio por consulta de 1 hora: 50 soles.\n"
+        "- Pack de 4 sesiones con 10% de descuento."
+    )
+    mostrar_teclado_inicio(message)
+
+@bot.message_handler(func=lambda message: message.text == '⬅️ Volver al inicio')
+def handle_volver_inicio(message):
+    """Vuelve al teclado inicial."""
+    mostrar_teclado_inicio(message)
+
+def mostrar_teclado_inicio(message):
+    """Muestra el teclado inicial con las opciones principales."""
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    btn_agendar = KeyboardButton('📅 Agendar cita')
+    btn_servicios = KeyboardButton('ℹ️ Servicios')
+    btn_contactar = KeyboardButton('💬 Contactar por WhatsApp')
+    btn_sobre_nataly = KeyboardButton('👩‍⚕️ Sobre Nataly')
+    btn_testimonios = KeyboardButton('📝 Testimonios')
+
+    # Agregar los botones al teclado
+    markup.add(btn_agendar, btn_servicios, btn_contactar, btn_sobre_nataly, btn_testimonios)
+
+    # Enviar el teclado al usuario
+    bot.send_message(
+        message.chat.id,
+        "¿En qué más puedo ayudarte?",
+        reply_markup=markup
+    )
+#FIN - SERVICIOS
+
+#INICIO - ENVIAR MENSAJE POR WHATSAPP
+@bot.message_handler(func=lambda message: message.text == '💬 Contactar por WhatsApp')
+def handle_contactar_whatsapp(message):
+    """Envía un enlace para contactar a Nataly por WhatsApp."""
+    whatsapp_number = "+51947203044"
+    whatsapp_message = "¡Hola! Me gustaría obtener más información sobre los servicios del CentroPsicoNaty."
+    whatsapp_link = f"https://wa.me/{whatsapp_number[1:]}?text={requests.utils.quote(whatsapp_message)}"
+
+    bot.send_message(
+        message.chat.id,
+        f"Puedes contactar a Nataly por WhatsApp usando el siguiente enlace:\n{whatsapp_link}"
+    )
+#FIN - ENVIAR MENSAJE POR WHATSAPP
+
+#INICIO - SOBRE NATALY
+@bot.message_handler(func=lambda message: message.text == '👩‍⚕️ Sobre Nataly')
+def handle_sobre_nataly(message):
+    """Muestra información sobre Nataly."""
+    # Ruta de la foto de Nataly
+    photo_path = "FotoNataly.jpg"
+    
+    try:
+        # Enviar la foto con el mensaje inicial
+        with open(photo_path, 'rb') as photo:
+            bot.send_photo(
+                message.chat.id,
+                photo,
+                caption="Soy la Psicóloga Nataly Atuncar, especialista en Humanista y parejas."
+            )
+        
+        # Enviar el mensaje de certificaciones
+        bot.send_message(
+            message.chat.id,
+            "Certificaciones: Colegiada en CRP-12345"
+        )
+        
+        # Enviar el enlace de LinkedIn
+        bot.send_message(
+            message.chat.id,
+            "Puedes conocer más sobre mí en mi perfil de LinkedIn:\nwww.linkedin.com/in/jsilvaal"
+        )
+    except FileNotFoundError:
+        bot.send_message(
+            message.chat.id,
+            "Lo siento, no se encontró la foto de Nataly. Por favor, verifica que el archivo 'FotoNataly.jpg' esté en el directorio correcto."
+        )
+#FIN - SOBRE NATALY
 
 def insert_user(telegram_id: int, name: str):
     """Inserta un usuario en la base de datos de manera segura."""
@@ -85,11 +293,6 @@ def send_weather(message):
         bot.reply_to(message, weather_info)
     else:
         bot.reply_to(message, "Por favor, proporciona el nombre de la ciudad. Ejemplo: /clima Madrid")
-
-#Creacion de comandos simples como `/start` y `/help`
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.reply_to(message, 'Hola! Soy tu primer bot creado con Telebot')
 
 @bot.message_handler(commands=['help'])
 def send_welcome(message):
@@ -184,11 +387,3 @@ def create_event(summary, description, start_time, end_time, attendees=None):
 
 if __name__ == '__main__':
     bot.polling(none_stop=True)
-    
-    #REGISTRAR REUNION
-    #summary = "Reunión de Proyecto"
-    #description = "Discusión sobre el progreso del proyecto."
-    #start_time = "2025-04-25T10:00:00-07:00"  # Formato ISO 8601
-    #end_time = "2025-04-25T11:00:00-07:00"
-    #attendees = ["correo1@example.com", "correo2@example.com"]
-    #create_event(summary, description, start_time, end_time, attendees)
