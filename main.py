@@ -65,9 +65,9 @@ def process_datetime(message):
         start_time = datetime.strptime(user_input, "%Y-%m-%d %H:%M")
         end_time = start_time + timedelta(hours=1)  # Duración de 1 hora
 
-        # Convertir a formato ISO 8601
-        start_time_iso = start_time.isoformat()
-        end_time_iso = end_time.isoformat()
+        # Convertir a formato ISO 8601 con zona horaria
+        start_time_iso = start_time.isoformat() + "-05:00"  # Zona horaria de Lima (UTC-5)
+        end_time_iso = end_time.isoformat() + "-05:00"
 
         # Solicitar el correo de los asistentes
         bot.reply_to(message, "Por favor, proporciona los correos electrónicos de los asistentes separados por comas y sin espacios.")
@@ -76,10 +76,30 @@ def process_datetime(message):
         bot.reply_to(message, "El formato de fecha y hora no es válido. Por favor, usa el formato 'AAAA-MM-DD HH:MM'.")
 
 def process_attendees(message, start_time_iso, end_time_iso):
-    """Procesa los correos electrónicos de los asistentes y crea el evento."""
+    """Procesa los correos electrónicos de los asistentes y valida la disponibilidad antes de crear el evento."""
     try:
         # Obtener los correos electrónicos de los asistentes
         attendees = [email.strip() for email in message.text.split(",")]
+
+        # Validar disponibilidad en Google Calendar
+        if not is_time_available(start_time_iso, end_time_iso):
+            # Obtener la fecha del evento
+            date_iso = start_time_iso.split("T")[0]
+            available_slots = get_available_slots(date_iso)
+
+            if available_slots:
+                bot.reply_to(
+                    message,
+                    f"Lo siento, ya hay una cita reservada en ese horario. Los horarios disponibles para el {date_iso} son:\n" +
+                    "\n".join(available_slots) + "." + "\n" + "Por favor intenta agendar la cita de nuevo."
+                )
+            else:
+                bot.reply_to(
+                    message,
+                    f"Lo siento, no hay horarios disponibles para el {date_iso}. Por favor intenta agendar la cita de nuevo."
+                )
+            mostrar_teclado_inicio(message)
+            return
 
         # Crear el evento en Google Calendar
         summary = "Cita con Nataly"
@@ -88,27 +108,80 @@ def process_attendees(message, start_time_iso, end_time_iso):
 
         # Confirmar al usuario
         bot.reply_to(message, f"¡Cita creada con éxito! Aquí está el enlace: {event.get('htmlLink')}")
-        
+
         # Mostrar nuevamente el teclado con las opciones
-        markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-        btn_agendar = KeyboardButton('📅 Agendar cita')
-        btn_servicios = KeyboardButton('ℹ️ Servicios')
-        btn_contactar = KeyboardButton('💬 Contactar por WhatsApp')
-        btn_sobre_nataly = KeyboardButton('👩‍⚕️ Sobre Nataly')
-        btn_testimonios = KeyboardButton('📝 Testimonios')
-
-        # Agregar los botones al teclado
-        markup.add(btn_agendar, btn_servicios, btn_contactar, btn_sobre_nataly, btn_testimonios)
-
-        # Enviar el teclado al usuario
-        bot.send_message(
-            message.chat.id,
-            "¿En qué más puedo ayudarte?",
-            reply_markup=markup
-        )
+        mostrar_teclado_inicio(message)
 
     except Exception as e:
         bot.reply_to(message, f"Hubo un error al crear la cita: {e}")
+
+def is_time_available(start_time_iso, end_time_iso):
+    """Verifica si hay disponibilidad en Google Calendar para el rango de tiempo dado."""
+    try:
+        service = authenticate_google()
+        events_result = service.events().list(
+            calendarId='primary',
+            timeMin=start_time_iso,
+            timeMax=end_time_iso,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        events = events_result.get('items', [])
+
+        # Si hay eventos en el rango de tiempo, no está disponible
+        return len(events) == 0
+    except Exception as e:
+        print(f"Error al verificar disponibilidad: {e}")
+        return False
+
+def get_available_slots(date_iso):
+    """Obtiene los horarios disponibles en Google Calendar para un día específico."""
+    try:
+        service = authenticate_google()
+        # Definir el rango de tiempo del día (7:00 AM a 8:00 PM)
+        start_of_day = f"{date_iso}T07:00:00-05:00"  # Inicio del día
+        end_of_day = f"{date_iso}T20:00:00-05:00"  # Fin del día
+
+        # Obtener eventos del día
+        events_result = service.events().list(
+            calendarId='primary',
+            timeMin=start_of_day,
+            timeMax=end_of_day,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        events = events_result.get('items', [])
+
+        # Crear una lista de horarios ocupados
+        busy_slots = []
+        for event in events:
+            start = event['start'].get('dateTime', event['start'].get('date'))
+            end = event['end'].get('dateTime', event['end'].get('date'))
+            busy_slots.append((start, end))
+
+        # Generar horarios disponibles
+        available_slots = []
+        current_time = datetime.strptime(start_of_day, "%Y-%m-%dT%H:%M:%S%z")
+        end_time = datetime.strptime(end_of_day, "%Y-%m-%dT%H:%M:%S%z")
+
+        for start, end in busy_slots:
+            event_start = datetime.strptime(start, "%Y-%m-%dT%H:%M:%S%z")
+            if current_time < event_start:
+                available_slots.append((current_time, event_start))
+            current_time = datetime.strptime(end, "%Y-%m-%dT%H:%M:%S%z")
+
+        # Agregar el último intervalo disponible si queda tiempo
+        if current_time < end_time:
+            available_slots.append((current_time, end_time))
+
+        # Formatear los horarios disponibles
+        formatted_slots = [
+            f"{slot[0].strftime('%H:%M')} - {slot[1].strftime('%H:%M')}" for slot in available_slots
+        ]
+        return formatted_slots
+    except Exception as e:
+        print(f"Error al obtener horarios disponibles: {e}")
+        return []
 #FIN - AGENDAR CITA
 
 #INICIO - SERVICIOS
